@@ -9,7 +9,7 @@ pub enum SpdxExpr {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct License {
+pub struct OldLicense {
     pub id: String,
     pub name: String,
     pub copyleft_strength: CopyleftStrength,
@@ -25,6 +25,54 @@ pub enum CopyleftStrength {
     Unknown,        // Custom/unrecognized licenses
 }
 
+/// New copyleft strength categories based on detailed license classifications
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum NewCopyleftStrength {
+    /// Contributor License Agreement (CLA)
+    /// Describes contribution acceptance rules for software projects
+    CLA,
+    
+    /// Commercial
+    /// Third-party proprietary software offered under a direct commercial license
+    Commercial,
+    
+    /// Copyleft
+    /// Open source software with copyleft license requiring same license terms for redistributions
+    Copyleft,
+    
+    /// Copyleft Limited
+    /// Requires redistribution of source code with limited obligations according to license-specific rules
+    CopyleftLimited,
+    
+    /// Free Restricted
+    /// Permissive-style license with restrictions on usage or redistribution
+    FreeRestricted,
+    
+    /// Patent License
+    /// License that applies to patents rather than specific software
+    PatentLicense,
+    
+    /// Permissive
+    /// Open Source software under non-copyleft licenses requiring attribution
+    Permissive,
+    
+    /// Proprietary Free
+    /// Proprietary Free software with specific terms and conditions
+    ProprietaryFree,
+    
+    /// Public Domain
+    /// Open source software made available without explicit obligations
+    PublicDomain,
+    
+    /// Source-available
+    /// Software released through source code distribution model without necessarily meeting open-source criteria
+    SourceAvailable,
+    
+    /// Unstated License
+    /// Third-party software with copyright notice but no stated license
+    UnstatedLicense,
+}
+
 #[derive(Debug, Clone)]
 pub enum RiskLevel {
     Low,
@@ -38,9 +86,9 @@ pub enum RiskLevel {
 pub struct LicenseAnalysis {
     pub original_expression: String,
     pub parsed_expression: Option<SpdxExpr>,
-    pub possible_licenses: Vec<License>,
+    pub possible_licenses: Vec<OldLicense>,
     pub strongest_copyleft: CopyleftStrength,
-    pub recommended_choice: Option<License>,
+    pub recommended_choice: Option<OldLicense>,
     pub risk_level: RiskLevel,
     pub compliance_notes: Vec<String>,
     pub conflicts: Vec<String>,
@@ -112,8 +160,59 @@ impl fmt::Display for RiskLevel {
     }
 }
 
-impl fmt::Display for License {
+impl fmt::Display for NewCopyleftStrength {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            NewCopyleftStrength::CLA => write!(f, "Contributor License Agreement"),
+            NewCopyleftStrength::Commercial => write!(f, "Commercial"),
+            NewCopyleftStrength::Copyleft => write!(f, "Copyleft"),
+            NewCopyleftStrength::CopyleftLimited => write!(f, "Copyleft Limited"),
+            NewCopyleftStrength::FreeRestricted => write!(f, "Free Restricted"),
+            NewCopyleftStrength::PatentLicense => write!(f, "Patent License"),
+            NewCopyleftStrength::Permissive => write!(f, "Permissive"),
+            NewCopyleftStrength::ProprietaryFree => write!(f, "Proprietary Free"),
+            NewCopyleftStrength::PublicDomain => write!(f, "Public Domain"),
+            NewCopyleftStrength::SourceAvailable => write!(f, "Source-available"),
+            NewCopyleftStrength::UnstatedLicense => write!(f, "Unstated License"),
+        }
+    }
+}
+
+impl fmt::Display for OldLicense {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.id)
+    }
+}
+
+/// Returns a numeric value representing the strength order of NewCopyleftStrength variants
+/// Higher values indicate stronger copyleft requirements
+pub fn new_copyleft_strength_order(strength: &NewCopyleftStrength) -> u8 {
+    match strength {
+        // Lower strength licenses
+        NewCopyleftStrength::Permissive => 0,
+        NewCopyleftStrength::PublicDomain => 1,
+        NewCopyleftStrength::FreeRestricted => 2,
+        NewCopyleftStrength::SourceAvailable => 3,
+        NewCopyleftStrength::UnstatedLicense => 4,
+        NewCopyleftStrength::Commercial => 5,
+        NewCopyleftStrength::ProprietaryFree => 6,
+        NewCopyleftStrength::PatentLicense => 7,
+        NewCopyleftStrength::CLA => 8,
+        
+        // Higher strength licenses (copyleft)
+        NewCopyleftStrength::CopyleftLimited => 9,
+        NewCopyleftStrength::Copyleft => 10,
+    }
+}
+
+/// Compares two NewCopyleftStrength values and returns the stronger one
+pub fn choose_stronger_new_copyleft(a: &NewCopyleftStrength, b: &NewCopyleftStrength) -> NewCopyleftStrength {
+    let a_strength = new_copyleft_strength_order(a);
+    let b_strength = new_copyleft_strength_order(b);
+
+    if a_strength >= b_strength {
+        a.clone()
+    } else {
+        b.clone()
     }
 }

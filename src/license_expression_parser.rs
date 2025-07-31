@@ -1,10 +1,10 @@
 use std::collections::HashMap;
-use crate::models::{License, CopyleftStrength, SpdxExpr, RiskLevel, LicenseAnalysis};
+use crate::models::{OldLicense, CopyleftStrength, SpdxExpr, RiskLevel, LicenseAnalysis};
 use crate::license_database;
 
 #[derive(Debug)]
 pub struct LicenseExpressionParser {
-    license_db: HashMap<String, License>,
+    license_db: HashMap<String, OldLicense>,
 }
 
 impl LicenseExpressionParser {
@@ -158,14 +158,14 @@ impl LicenseExpressionParser {
         }
     }
 
-    fn evaluate_expression(&self, expr: &SpdxExpr) -> Vec<License> {
+    fn evaluate_expression(&self, expr: &SpdxExpr) -> Vec<OldLicense> {
         match expr {
             SpdxExpr::License(id) => {
                 if let Some(license) = self.license_db.get(id) {
                     vec![license.clone()]
                 } else {
                     // Handle unknown licenses
-                    vec![License {
+                    vec![OldLicense {
                         id: id.clone(),
                         name: format!("Unknown License: {}", id),
                         copyleft_strength: CopyleftStrength::Unknown,
@@ -191,14 +191,14 @@ impl LicenseExpressionParser {
         }
     }
 
-    fn find_compatible_licenses(&self, left: &[License], right: &[License]) -> Vec<License> {
+    fn find_compatible_licenses(&self, left: &[OldLicense], right: &[OldLicense]) -> Vec<OldLicense> {
         let mut compatible = Vec::new();
 
         for left_lic in left {
             for right_lic in right {
                 if self.are_licenses_compatible(left_lic, right_lic) {
                     let stronger = self.choose_stronger_license(left_lic, right_lic);
-                    if !compatible.iter().any(|l: &License| l.id == stronger.id) {
+                    if !compatible.iter().any(|l: &OldLicense| l.id == stronger.id) {
                         compatible.push(stronger);
                     }
                 }
@@ -210,7 +210,7 @@ impl LicenseExpressionParser {
             for left_lic in left {
                 for right_lic in right {
                     let stronger = self.choose_stronger_license(left_lic, right_lic);
-                    if !compatible.iter().any(|l: &License| l.id == stronger.id) {
+                    if !compatible.iter().any(|l: &OldLicense| l.id == stronger.id) {
                         compatible.push(stronger);
                     }
                 }
@@ -220,7 +220,7 @@ impl LicenseExpressionParser {
         compatible
     }
 
-    fn are_licenses_compatible(&self, a: &License, b: &License) -> bool {
+    fn are_licenses_compatible(&self, a: &OldLicense, b: &OldLicense) -> bool {
         // Basic compatibility rules
         match (&a.copyleft_strength, &b.copyleft_strength) {
             // Same license is always compatible
@@ -242,7 +242,7 @@ impl LicenseExpressionParser {
         }
     }
 
-    fn check_gpl_compatibility(&self, a: &License, b: &License) -> bool {
+    fn check_gpl_compatibility(&self, a: &OldLicense, b: &OldLicense) -> bool {
         // Handle specific GPL version compatibility
         match (a.id.as_str(), b.id.as_str()) {
             // GPL v2 only vs GPL v3+ incompatibility
@@ -265,7 +265,7 @@ impl LicenseExpressionParser {
         }
     }
 
-    fn choose_stronger_license(&self, a: &License, b: &License) -> License {
+    fn choose_stronger_license(&self, a: &OldLicense, b: &OldLicense) -> OldLicense {
         let a_strength = self.copyleft_strength_order(&a.copyleft_strength);
         let b_strength = self.copyleft_strength_order(&b.copyleft_strength);
 
@@ -286,7 +286,7 @@ impl LicenseExpressionParser {
         }
     }
 
-    fn find_strongest_copyleft(&self, licenses: &[License]) -> CopyleftStrength {
+    fn find_strongest_copyleft(&self, licenses: &[OldLicense]) -> CopyleftStrength {
         licenses.iter()
             .map(|l| &l.copyleft_strength)
             .max_by_key(|s| self.copyleft_strength_order(s))
@@ -294,7 +294,7 @@ impl LicenseExpressionParser {
             .clone()
     }
 
-    fn choose_recommended_license(&self, licenses: &[License]) -> Option<License> {
+    fn choose_recommended_license(&self, licenses: &[OldLicense]) -> Option<OldLicense> {
         if licenses.is_empty() {
             return None;
         }
@@ -306,7 +306,7 @@ impl LicenseExpressionParser {
         sorted_licenses.into_iter().next()
     }
 
-    fn assess_risk_level(&self, strongest: &CopyleftStrength, licenses: &[License]) -> RiskLevel {
+    fn assess_risk_level(&self, strongest: &CopyleftStrength, licenses: &[OldLicense]) -> RiskLevel {
         if licenses.is_empty() {
             return RiskLevel::Critical;
         }
@@ -320,7 +320,7 @@ impl LicenseExpressionParser {
         }
     }
 
-    fn generate_compliance_notes(&self, licenses: &[License], recommended: &Option<License>) -> Vec<String> {
+    fn generate_compliance_notes(&self, licenses: &[OldLicense], recommended: &Option<OldLicense>) -> Vec<String> {
         let mut notes = Vec::new();
 
         if licenses.is_empty() {
@@ -369,7 +369,7 @@ impl LicenseExpressionParser {
         notes
     }
 
-    fn find_conflicts(&self, licenses: &[License]) -> Vec<String> {
+    fn find_conflicts(&self, licenses: &[OldLicense]) -> Vec<String> {
         let mut conflicts = Vec::new();
 
         if licenses.is_empty() {

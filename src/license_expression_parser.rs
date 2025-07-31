@@ -1,16 +1,16 @@
 use std::collections::HashMap;
-use crate::models::{OldLicense, CopyleftStrength, SpdxExpr, RiskLevel, LicenseAnalysis};
-use crate::license_database;
+use crate::models::{NewCopyleftStrength, SpdxExpr, RiskLevel, LicenseAnalysis};
+use crate::license_database::{self, NewLicense};
 
 #[derive(Debug)]
 pub struct LicenseExpressionParser {
-    license_db: HashMap<String, OldLicense>,
+    license_db: HashMap<String, NewLicense>,
 }
 
 impl LicenseExpressionParser {
     pub fn new() -> Self {
         LicenseExpressionParser {
-            license_db: license_database::init_license_database(),
+            license_db: license_database::load_licenses_from_json().unwrap_or_default(),
         }
     }
 
@@ -158,17 +158,17 @@ impl LicenseExpressionParser {
         }
     }
 
-    fn evaluate_expression(&self, expr: &SpdxExpr) -> Vec<OldLicense> {
+    fn evaluate_expression(&self, expr: &SpdxExpr) -> Vec<NewLicense> {
         match expr {
             SpdxExpr::License(id) => {
                 if let Some(license) = self.license_db.get(id) {
                     vec![license.clone()]
                 } else {
                     // Handle unknown licenses
-                    vec![OldLicense {
+                    vec![NewLicense {
                         id: id.clone(),
                         name: format!("Unknown License: {}", id),
-                        copyleft_strength: CopyleftStrength::Unknown,
+                        copyleft_strength: NewCopyleftStrength::UnstatedLicense,
                         is_osi_approved: false,
                     }]
                 }
@@ -191,14 +191,14 @@ impl LicenseExpressionParser {
         }
     }
 
-    fn find_compatible_licenses(&self, left: &[OldLicense], right: &[OldLicense]) -> Vec<OldLicense> {
+    fn find_compatible_licenses(&self, left: &[NewLicense], right: &[NewLicense]) -> Vec<NewLicense> {
         let mut compatible = Vec::new();
 
         for left_lic in left {
             for right_lic in right {
                 if self.are_licenses_compatible(left_lic, right_lic) {
                     let stronger = self.choose_stronger_license(left_lic, right_lic);
-                    if !compatible.iter().any(|l: &OldLicense| l.id == stronger.id) {
+                    if !compatible.iter().any(|l: &NewLicense| l.id == stronger.id) {
                         compatible.push(stronger);
                     }
                 }
@@ -210,7 +210,7 @@ impl LicenseExpressionParser {
             for left_lic in left {
                 for right_lic in right {
                     let stronger = self.choose_stronger_license(left_lic, right_lic);
-                    if !compatible.iter().any(|l: &OldLicense| l.id == stronger.id) {
+                    if !compatible.iter().any(|l: &NewLicense| l.id == stronger.id) {
                         compatible.push(stronger);
                     }
                 }
@@ -220,54 +220,115 @@ impl LicenseExpressionParser {
         compatible
     }
 
-    fn are_licenses_compatible(&self, a: &OldLicense, b: &OldLicense) -> bool {
-        // Basic compatibility rules
+    fn are_licenses_compatible(&self, a: &NewLicense, b: &NewLicense) -> bool {
+        // Basic compatibility rules based on NewCopyleftStrength risk levels
         match (&a.copyleft_strength, &b.copyleft_strength) {
             // Same license is always compatible
             _ if a.id == b.id => true,
 
-            // Permissive licenses are compatible with everything
-            (CopyleftStrength::None, _) | (_, CopyleftStrength::None) => true,
+            // 🟢 低风险 - 完全兼容
+            (NewCopyleftStrength::PublicDomain, _) | (_, NewCopyleftStrength::PublicDomain) => true,
+            (NewCopyleftStrength::Permissive, _) | (_, NewCopyleftStrength::Permissive) => true,
 
-            // Weak copyleft can be combined with strong copyleft (results in strong)
-            (CopyleftStrength::Weak, CopyleftStrength::Strong) |
-            (CopyleftStrength::Strong, CopyleftStrength::Weak) => true,
+            // ⚖️ 特殊情况 - 通常兼容
+            (NewCopyleftStrength::CLA, NewCopyleftStrength::CLA) => true,
+            (NewCopyleftStrength::CLA, _) | (_, NewCopyleftStrength::CLA) => true,
+            (NewCopyleftStrength::PatentLicense, _) | (_, NewCopyleftStrength::PatentLicense) => true,
 
-            // Network copyleft can combine with other copylefts
-            (CopyleftStrength::Network, CopyleftStrength::Strong) |
-            (CopyleftStrength::Strong, CopyleftStrength::Network) => true,
+            // 🟡 中等风险 - 有限兼容
+            (NewCopyleftStrength::ProprietaryFree, NewCopyleftStrength::ProprietaryFree) => true,
+            (NewCopyleftStrength::FreeRestricted, NewCopyleftStrength::FreeRestricted) => true,
 
-            // Specific GPL compatibility rules
-            _ => self.check_gpl_compatibility(a, b),
+            // 🟡 CopyleftLimited组合规则 - 需要具体检查
+            (NewCopyleftStrength::CopyleftLimited, NewCopyleftStrength::Copyleft) |
+            (NewCopyleftStrength::Copyleft, NewCopyleftStrength::CopyleftLimited) => {
+                // LGPL与GPL的兼容性需要具体版本判断
+                self.check_specific_compatibility(a, b)
+            },
+            (NewCopyleftStrength::CopyleftLimited, NewCopyleftStrength::Permissive) |
+            (NewCopyleftStrength::Permissive, NewCopyleftStrength::CopyleftLimited) => true,
+            (NewCopyleftStrength::CopyleftLimited, NewCopyleftStrength::PublicDomain) |
+            (NewCopyleftStrength::PublicDomain, NewCopyleftStrength::CopyleftLimited) => true,
+
+            // 🔴 高风险 - 严格限制
+            (NewCopyleftStrength::Copyleft, NewCopyleftStrength::Copyleft) => false, // 相同Copyleft通常不兼容
+            (NewCopyleftStrength::Copyleft, NewCopyleftStrength::SourceAvailable) |
+            (NewCopyleftStrength::SourceAvailable, NewCopyleftStrength::Copyleft) => false,
+
+            // 🚨 最高风险 - 不兼容
+            (NewCopyleftStrength::Commercial, _) | (_, NewCopyleftStrength::Commercial) => false,
+            (NewCopyleftStrength::UnstatedLicense, _) | (_, NewCopyleftStrength::UnstatedLicense) => false,
+
+            // 其他组合需要特殊处理
+            _ => self.check_specific_compatibility(a, b),
         }
     }
 
-    fn check_gpl_compatibility(&self, a: &OldLicense, b: &OldLicense) -> bool {
-        // Handle specific GPL version compatibility
+    fn check_specific_compatibility(&self, a: &NewLicense, b: &NewLicense) -> bool {
+        // Handle specific license compatibility based on actual SPDX identifiers
         match (a.id.as_str(), b.id.as_str()) {
-            // GPL v2 only vs GPL v3+ incompatibility
+            // GPL版本兼容性
             ("GPL-2.0-only", id) if id.contains("GPL-3.0") => false,
             (id, "GPL-2.0-only") if id.contains("GPL-3.0") => false,
-
-            // GPL v2+ can upgrade to v3+
             ("GPL-2.0-or-later", id) if id.contains("GPL-3.0") => true,
             (id, "GPL-2.0-or-later") if id.contains("GPL-3.0") => true,
 
-            // LGPL v3+ is compatible with GPL v3+
+            // LGPL与GPL兼容性
             (id1, id2) if id1.contains("LGPL-3.0") && id2.contains("GPL-3.0") => true,
             (id1, id2) if id1.contains("GPL-3.0") && id2.contains("LGPL-3.0") => true,
 
-            // Default to incompatible for strong copyleft combinations
-            _ if matches!(a.copyleft_strength, CopyleftStrength::Strong) &&
-                matches!(b.copyleft_strength, CopyleftStrength::Strong) => false,
+            // CopyleftLimited之间的兼容性
+            ("LGPL-2.1-only", "LGPL-2.1-or-later") => true,
+            ("LGPL-2.1-or-later", "LGPL-2.1-only") => true,
+            ("LGPL-3.0-only", "LGPL-3.0-or-later") => true,
+            ("LGPL-3.0-or-later", "LGPL-3.0-only") => true,
 
-            _ => true,
+            // Permissive与CopyleftLimited
+            ("MIT", "LGPL-2.1") | ("LGPL-2.1", "MIT") => true,
+            ("MIT", "LGPL-3.0") | ("LGPL-3.0", "MIT") => true,
+            ("Apache-2.0", "LGPL-3.0") | ("LGPL-3.0", "Apache-2.0") => true,
+
+            // Public Domain兼容性
+            ("CC0-1.0", _) | (_, "CC0-1.0") => true,
+            ("Unlicense", _) | (_, "Unlicense") => true,
+
+            // 相同许可证家族
+            (id1, id2) if self.same_license_family(id1, id2) => true,
+
+            // 默认策略：保守处理未知组合
+            _ => {
+                // 对于未知组合，基于风险等级判断
+                let a_order = crate::models::new_copyleft_strength_order(&a.copyleft_strength);
+                let b_order = crate::models::new_copyleft_strength_order(&b.copyleft_strength);
+                
+                // 如果两个都是中等风险以上，视为不兼容
+                a_order <= 5 && b_order <= 5
+            }
         }
     }
 
-    fn choose_stronger_license(&self, a: &OldLicense, b: &OldLicense) -> OldLicense {
-        let a_strength = self.copyleft_strength_order(&a.copyleft_strength);
-        let b_strength = self.copyleft_strength_order(&b.copyleft_strength);
+    fn same_license_family(&self, id1: &str, id2: &str) -> bool {
+        let families = [
+            ("MIT", vec!["MIT", "Expat", "X11"]),
+            ("BSD", vec!["BSD-2-Clause", "BSD-3-Clause", "BSD-4-Clause"]),
+            ("Apache", vec!["Apache-1.1", "Apache-2.0"]),
+            ("GPL", vec!["GPL-2.0", "GPL-3.0", "GPL-2.0-only", "GPL-3.0-only"]),
+            ("LGPL", vec!["LGPL-2.0", "LGPL-2.1", "LGPL-3.0", "LGPL-2.1-only", "LGPL-3.0-only"]),
+        ];
+
+        for (family, members) in families.iter() {
+            let id1_in = members.iter().any(|m| id1.contains(m));
+            let id2_in = members.iter().any(|m| id2.contains(m));
+            if id1_in && id2_in {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn choose_stronger_license(&self, a: &NewLicense, b: &NewLicense) -> NewLicense {
+        let a_strength = crate::models::new_copyleft_strength_order(&a.copyleft_strength);
+        let b_strength = crate::models::new_copyleft_strength_order(&b.copyleft_strength);
 
         if a_strength >= b_strength {
             a.clone()
@@ -276,51 +337,41 @@ impl LicenseExpressionParser {
         }
     }
 
-    fn copyleft_strength_order(&self, strength: &CopyleftStrength) -> u8 {
-        match strength {
-            CopyleftStrength::None => 0,
-            CopyleftStrength::Weak => 1,
-            CopyleftStrength::Strong => 2,
-            CopyleftStrength::Network => 3,
-            CopyleftStrength::Unknown => 4,
-        }
-    }
-
-    fn find_strongest_copyleft(&self, licenses: &[OldLicense]) -> CopyleftStrength {
+    fn find_strongest_copyleft(&self, licenses: &[NewLicense]) -> NewCopyleftStrength {
         licenses.iter()
             .map(|l| &l.copyleft_strength)
-            .max_by_key(|s| self.copyleft_strength_order(s))
-            .unwrap_or(&CopyleftStrength::None)
+            .max_by_key(|s| crate::models::new_copyleft_strength_order(s))
+            .unwrap_or(&NewCopyleftStrength::PublicDomain)
             .clone()
     }
 
-    fn choose_recommended_license(&self, licenses: &[OldLicense]) -> Option<OldLicense> {
+    fn choose_recommended_license(&self, licenses: &[NewLicense]) -> Option<NewLicense> {
         if licenses.is_empty() {
             return None;
         }
 
         // Prefer permissive licenses, then weak copyleft, then strong copyleft
         let mut sorted_licenses = licenses.to_vec();
-        sorted_licenses.sort_by_key(|l| self.copyleft_strength_order(&l.copyleft_strength));
+        sorted_licenses.sort_by_key(|l| crate::models::new_copyleft_strength_order(&l.copyleft_strength));
 
         sorted_licenses.into_iter().next()
     }
 
-    fn assess_risk_level(&self, strongest: &CopyleftStrength, licenses: &[OldLicense]) -> RiskLevel {
+    fn assess_risk_level(&self, strongest: &NewCopyleftStrength, licenses: &[NewLicense]) -> RiskLevel {
         if licenses.is_empty() {
             return RiskLevel::Critical;
         }
 
         match strongest {
-            CopyleftStrength::None => RiskLevel::Low,
-            CopyleftStrength::Weak => RiskLevel::Medium,
-            CopyleftStrength::Strong => RiskLevel::High,
-            CopyleftStrength::Network => RiskLevel::Critical,
-            CopyleftStrength::Unknown => RiskLevel::Unknown,
+            NewCopyleftStrength::PublicDomain | NewCopyleftStrength::Permissive => RiskLevel::Low,
+            NewCopyleftStrength::CopyleftLimited => RiskLevel::Medium,
+            NewCopyleftStrength::Copyleft => RiskLevel::High,
+            NewCopyleftStrength::UnstatedLicense => RiskLevel::Unknown,
+            _ => RiskLevel::Medium, // Handle other cases
         }
     }
 
-    fn generate_compliance_notes(&self, licenses: &[OldLicense], recommended: &Option<OldLicense>) -> Vec<String> {
+    fn generate_compliance_notes(&self, licenses: &[NewLicense], recommended: &Option<NewLicense>) -> Vec<String> {
         let mut notes = Vec::new();
 
         if licenses.is_empty() {
@@ -332,25 +383,24 @@ impl LicenseExpressionParser {
             notes.push(format!("Recommended license choice: {}", rec.id));
 
             match rec.copyleft_strength {
-                CopyleftStrength::Strong => {
-                    notes.push("Strong copyleft: All derivative works must use compatible licenses".to_string());
+                NewCopyleftStrength::Copyleft => {
+                    notes.push("🔴 Copyleft: All derivative works must use compatible licenses".to_string());
                     notes.push("Required: Provide complete source code upon distribution".to_string());
                     notes.push("Caution: Static linking may affect entire codebase".to_string());
                 }
-                CopyleftStrength::Weak => {
-                    notes.push("Weak copyleft: Only modifications to this component must be open-sourced".to_string());
+                NewCopyleftStrength::CopyleftLimited => {
+                    notes.push("🟡 CopyleftLimited: Only modifications to this component must be open-sourced".to_string());
                     notes.push("Dynamic linking generally acceptable".to_string());
                 }
-                CopyleftStrength::None => {
-                    notes.push("✅ Permissive license: Minimal compliance requirements".to_string());
+                NewCopyleftStrength::Permissive | NewCopyleftStrength::PublicDomain => {
+                    notes.push("✅ Permissive/PublicDomain: Minimal compliance requirements".to_string());
                     notes.push("Required: Include license notice and attribution".to_string());
                 }
-                CopyleftStrength::Network => {
-                    notes.push("Network copyleft: Source must be provided even for network services".to_string());
-                    notes.push("Applies to SaaS and web services".to_string());
-                }
-                CopyleftStrength::Unknown => {
+                NewCopyleftStrength::UnstatedLicense => {
                     notes.push("Unknown license: Manual legal review required".to_string());
+                }
+                _ => {
+                    notes.push("Special license type: Review specific requirements".to_string());
                 }
             }
         }
@@ -369,7 +419,7 @@ impl LicenseExpressionParser {
         notes
     }
 
-    fn find_conflicts(&self, licenses: &[OldLicense]) -> Vec<String> {
+    fn find_conflicts(&self, licenses: &[NewLicense]) -> Vec<String> {
         let mut conflicts = Vec::new();
 
         if licenses.is_empty() {

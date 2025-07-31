@@ -1,4 +1,5 @@
 use std::fmt;
+use crate::license_database::NewLicense;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SpdxExpr {
@@ -86,9 +87,9 @@ pub enum RiskLevel {
 pub struct LicenseAnalysis {
     pub original_expression: String,
     pub parsed_expression: Option<SpdxExpr>,
-    pub possible_licenses: Vec<OldLicense>,
-    pub strongest_copyleft: CopyleftStrength,
-    pub recommended_choice: Option<OldLicense>,
+    pub possible_licenses: Vec<NewLicense>,
+    pub strongest_copyleft: NewCopyleftStrength,
+    pub recommended_choice: Option<NewLicense>,
     pub risk_level: RiskLevel,
     pub compliance_notes: Vec<String>,
     pub conflicts: Vec<String>,
@@ -186,22 +187,29 @@ impl fmt::Display for OldLicense {
 
 /// Returns a numeric value representing the strength order of NewCopyleftStrength variants
 /// Higher values indicate stronger copyleft requirements
+/// Ordered by risk level from highest (avoid) to lowest (safe)
 pub fn new_copyleft_strength_order(strength: &NewCopyleftStrength) -> u8 {
     match strength {
-        // Lower strength licenses
-        NewCopyleftStrength::Permissive => 0,
-        NewCopyleftStrength::PublicDomain => 1,
-        NewCopyleftStrength::FreeRestricted => 2,
-        NewCopyleftStrength::SourceAvailable => 3,
-        NewCopyleftStrength::UnstatedLicense => 4,
-        NewCopyleftStrength::Commercial => 5,
-        NewCopyleftStrength::ProprietaryFree => 6,
-        NewCopyleftStrength::PatentLicense => 7,
-        NewCopyleftStrength::CLA => 8,
+        // 🚨 避免使用 - 最高风险
+        NewCopyleftStrength::UnstatedLicense => 10,
+        NewCopyleftStrength::Commercial => 9,
         
-        // Higher strength licenses (copyleft)
-        NewCopyleftStrength::CopyleftLimited => 9,
-        NewCopyleftStrength::Copyleft => 10,
+        // 🔴 强制开源 - 高风险
+        NewCopyleftStrength::Copyleft => 8,
+        NewCopyleftStrength::SourceAvailable => 7,
+        
+        // 🟡 部分限制 - 中等风险
+        NewCopyleftStrength::CopyleftLimited => 6,
+        NewCopyleftStrength::FreeRestricted => 5,
+        NewCopyleftStrength::ProprietaryFree => 4,
+        
+        // ⚖️ 特殊情况
+        NewCopyleftStrength::PatentLicense => 3,
+        NewCopyleftStrength::CLA => 2,
+        
+        // 🟢 最小限制 - 低风险
+        NewCopyleftStrength::Permissive => 1,
+        NewCopyleftStrength::PublicDomain => 0,
     }
 }
 

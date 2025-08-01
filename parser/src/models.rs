@@ -9,23 +9,6 @@ pub enum SpdxExpr {
     With(Box<SpdxExpr>, String), // License WITH exception
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct OldLicense {
-    pub id: String,
-    pub name: String,
-    pub copyleft_strength: CopyleftStrength,
-    pub is_osi_approved: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum CopyleftStrength {
-    None,           // Permissive licenses
-    Weak,           // LGPL-style
-    Strong,         // GPL-style
-    Network,        // AGPL-style
-    Unknown,        // Custom/unrecognized licenses
-}
-
 /// New copyleft strength categories based on detailed license classifications
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum NewCopyleftStrength {
@@ -95,22 +78,9 @@ pub struct LicenseAnalysis {
     pub conflicts: Vec<String>,
 }
 
-impl fmt::Display for CopyleftStrength {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            CopyleftStrength::None => write!(f, "Permissive"),
-            CopyleftStrength::Weak => write!(f, "Weak Copyleft"),
-            CopyleftStrength::Strong => write!(f, "Strong Copyleft"),
-            CopyleftStrength::Network => write!(f, "Network Copyleft"),
-            CopyleftStrength::Unknown => write!(f, "Unknown"),
-        }
-    }
-}
-
 impl fmt::Display for LicenseAnalysis {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "=== License Analysis ===")?;
-        writeln!(f, "Original Expression: {}", self.original_expression)?;
+        writeln!(f, "License Analysis for: {}", self.original_expression)?;
         writeln!(f, "Risk Level: {}", self.risk_level)?;
         writeln!(f, "Strongest Copyleft: {}", self.strongest_copyleft)?;
 
@@ -179,35 +149,29 @@ impl fmt::Display for NewCopyleftStrength {
     }
 }
 
-impl fmt::Display for OldLicense {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.id)
-    }
-}
-
 /// Returns a numeric value representing the strength order of NewCopyleftStrength variants
 /// Higher values indicate stronger copyleft requirements
 /// Ordered by risk level from highest (avoid) to lowest (safe)
 pub fn new_copyleft_strength_order(strength: &NewCopyleftStrength) -> u8 {
     match strength {
-        // 🚨 避免使用 - 最高风险
+        // Avoid using - highest risk
         NewCopyleftStrength::UnstatedLicense => 10,
         NewCopyleftStrength::Commercial => 9,
         
-        // 🔴 强制开源 - 高风险
+        // Mandatory open source - high risk
         NewCopyleftStrength::Copyleft => 8,
         NewCopyleftStrength::SourceAvailable => 7,
         
-        // 🟡 部分限制 - 中等风险
+        // Partial restrictions - medium risk
         NewCopyleftStrength::CopyleftLimited => 6,
         NewCopyleftStrength::FreeRestricted => 5,
         NewCopyleftStrength::ProprietaryFree => 4,
         
-        // ⚖️ 特殊情况
+        // Special cases
         NewCopyleftStrength::PatentLicense => 3,
         NewCopyleftStrength::CLA => 2,
         
-        // 🟢 最小限制 - 低风险
+        // Minimal restrictions - low risk
         NewCopyleftStrength::Permissive => 1,
         NewCopyleftStrength::PublicDomain => 0,
     }

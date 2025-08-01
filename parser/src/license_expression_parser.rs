@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use log;
 use crate::models::{NewCopyleftStrength, SpdxExpr, RiskLevel, LicenseAnalysis};
 use crate::license_database::{self, NewLicense};
 
@@ -126,13 +127,15 @@ impl LicenseExpressionParser {
     }
 
     pub fn analyze(&self, expression: &str) -> LicenseAnalysis {
-        print!("expressionexpressionexpressionexpressionexpression--------- {:?}", expression);
+        
         let parsed = match self.parse(expression) {
             Ok(expr) => Some(expr),
-            Err(er) => {print!( "ttttttttttttt {}", er);None},
+            Err(er) => {
+                log::error!("Failed to parse license expression: {}", er);
+                None
+            },
         };
 
-        print!("123123123123123123123--------- {:?}", parsed.clone());
 
         let possible_licenses = if let Some(ref expr) = parsed {
             self.evaluate_expression(expr)
@@ -169,7 +172,6 @@ impl LicenseExpressionParser {
                         id: id.clone(),
                         name: format!("Unknown License: {}", id),
                         copyleft_strength: NewCopyleftStrength::UnstatedLicense,
-                        is_osi_approved: false,
                     }]
                 }
             }
@@ -226,40 +228,36 @@ impl LicenseExpressionParser {
             // Same license is always compatible
             _ if a.id == b.id => true,
 
-            // 🟢 低风险 - 完全兼容
+            // Low risk - fully compatible
             (NewCopyleftStrength::PublicDomain, _) | (_, NewCopyleftStrength::PublicDomain) => true,
             (NewCopyleftStrength::Permissive, _) | (_, NewCopyleftStrength::Permissive) => true,
 
-            // ⚖️ 特殊情况 - 通常兼容
+            // Special cases - generally compatible
             (NewCopyleftStrength::CLA, NewCopyleftStrength::CLA) => true,
             (NewCopyleftStrength::CLA, _) | (_, NewCopyleftStrength::CLA) => true,
             (NewCopyleftStrength::PatentLicense, _) | (_, NewCopyleftStrength::PatentLicense) => true,
 
-            // 🟡 中等风险 - 有限兼容
+            // Medium risk - limited compatibility
             (NewCopyleftStrength::ProprietaryFree, NewCopyleftStrength::ProprietaryFree) => true,
             (NewCopyleftStrength::FreeRestricted, NewCopyleftStrength::FreeRestricted) => true,
 
-            // 🟡 CopyleftLimited组合规则 - 需要具体检查
+            // CopyleftLimited combination rules - requires specific checking
             (NewCopyleftStrength::CopyleftLimited, NewCopyleftStrength::Copyleft) |
             (NewCopyleftStrength::Copyleft, NewCopyleftStrength::CopyleftLimited) => {
-                // LGPL与GPL的兼容性需要具体版本判断
+                // LGPL and GPL compatibility requires specific version judgment
                 self.check_specific_compatibility(a, b)
             },
-            (NewCopyleftStrength::CopyleftLimited, NewCopyleftStrength::Permissive) |
-            (NewCopyleftStrength::Permissive, NewCopyleftStrength::CopyleftLimited) => true,
-            (NewCopyleftStrength::CopyleftLimited, NewCopyleftStrength::PublicDomain) |
-            (NewCopyleftStrength::PublicDomain, NewCopyleftStrength::CopyleftLimited) => true,
 
-            // 🔴 高风险 - 严格限制
-            (NewCopyleftStrength::Copyleft, NewCopyleftStrength::Copyleft) => false, // 相同Copyleft通常不兼容
+            // High risk - strict restrictions
+            (NewCopyleftStrength::Copyleft, NewCopyleftStrength::Copyleft) => false, // Same Copyleft usually incompatible
             (NewCopyleftStrength::Copyleft, NewCopyleftStrength::SourceAvailable) |
             (NewCopyleftStrength::SourceAvailable, NewCopyleftStrength::Copyleft) => false,
 
-            // 🚨 最高风险 - 不兼容
+            // Highest risk - incompatible
             (NewCopyleftStrength::Commercial, _) | (_, NewCopyleftStrength::Commercial) => false,
             (NewCopyleftStrength::UnstatedLicense, _) | (_, NewCopyleftStrength::UnstatedLicense) => false,
 
-            // 其他组合需要特殊处理
+            // Other combinations require special handling
             _ => self.check_specific_compatibility(a, b),
         }
     }
@@ -267,41 +265,41 @@ impl LicenseExpressionParser {
     fn check_specific_compatibility(&self, a: &NewLicense, b: &NewLicense) -> bool {
         // Handle specific license compatibility based on actual SPDX identifiers
         match (a.id.as_str(), b.id.as_str()) {
-            // GPL版本兼容性
+            // GPL version compatibility
             ("GPL-2.0-only", id) if id.contains("GPL-3.0") => false,
             (id, "GPL-2.0-only") if id.contains("GPL-3.0") => false,
             ("GPL-2.0-or-later", id) if id.contains("GPL-3.0") => true,
             (id, "GPL-2.0-or-later") if id.contains("GPL-3.0") => true,
 
-            // LGPL与GPL兼容性
+            // LGPL and GPL compatibility
             (id1, id2) if id1.contains("LGPL-3.0") && id2.contains("GPL-3.0") => true,
             (id1, id2) if id1.contains("GPL-3.0") && id2.contains("LGPL-3.0") => true,
 
-            // CopyleftLimited之间的兼容性
+            // CopyleftLimited compatibility
             ("LGPL-2.1-only", "LGPL-2.1-or-later") => true,
             ("LGPL-2.1-or-later", "LGPL-2.1-only") => true,
             ("LGPL-3.0-only", "LGPL-3.0-or-later") => true,
             ("LGPL-3.0-or-later", "LGPL-3.0-only") => true,
 
-            // Permissive与CopyleftLimited
+            // Permissive and CopyleftLimited
             ("MIT", "LGPL-2.1") | ("LGPL-2.1", "MIT") => true,
             ("MIT", "LGPL-3.0") | ("LGPL-3.0", "MIT") => true,
             ("Apache-2.0", "LGPL-3.0") | ("LGPL-3.0", "Apache-2.0") => true,
 
-            // Public Domain兼容性
+            // Public Domain compatibility
             ("CC0-1.0", _) | (_, "CC0-1.0") => true,
             ("Unlicense", _) | (_, "Unlicense") => true,
 
-            // 相同许可证家族
+            // Same license family
             (id1, id2) if self.same_license_family(id1, id2) => true,
 
-            // 默认策略：保守处理未知组合
+            // Default strategy: conservative handling of unknown combinations
             _ => {
-                // 对于未知组合，基于风险等级判断
+                // For unknown combinations, judge based on risk level
                 let a_order = crate::models::new_copyleft_strength_order(&a.copyleft_strength);
                 let b_order = crate::models::new_copyleft_strength_order(&b.copyleft_strength);
                 
-                // 如果两个都是中等风险以上，视为不兼容
+                // If both are medium risk or higher, consider incompatible
                 a_order <= 5 && b_order <= 5
             }
         }
@@ -316,7 +314,7 @@ impl LicenseExpressionParser {
             ("LGPL", vec!["LGPL-2.0", "LGPL-2.1", "LGPL-3.0", "LGPL-2.1-only", "LGPL-3.0-only"]),
         ];
 
-        for (family, members) in families.iter() {
+        for (_family, members) in families.iter() {
             let id1_in = members.iter().any(|m| id1.contains(m));
             let id2_in = members.iter().any(|m| id2.contains(m));
             if id1_in && id2_in {
@@ -367,7 +365,12 @@ impl LicenseExpressionParser {
             NewCopyleftStrength::CopyleftLimited => RiskLevel::Medium,
             NewCopyleftStrength::Copyleft => RiskLevel::High,
             NewCopyleftStrength::UnstatedLicense => RiskLevel::Unknown,
-            _ => RiskLevel::Medium, // Handle other cases
+            NewCopyleftStrength::CLA => RiskLevel::Low,
+            NewCopyleftStrength::Commercial => RiskLevel::Critical,
+            NewCopyleftStrength::FreeRestricted => RiskLevel::Medium,
+            NewCopyleftStrength::PatentLicense => RiskLevel::Medium,
+            NewCopyleftStrength::ProprietaryFree => RiskLevel::Medium,
+            NewCopyleftStrength::SourceAvailable => RiskLevel::High,
         }
     }
 
@@ -384,23 +387,45 @@ impl LicenseExpressionParser {
 
             match rec.copyleft_strength {
                 NewCopyleftStrength::Copyleft => {
-                    notes.push("🔴 Copyleft: All derivative works must use compatible licenses".to_string());
+                    notes.push("Copyleft: All derivative works must use compatible licenses".to_string());
                     notes.push("Required: Provide complete source code upon distribution".to_string());
                     notes.push("Caution: Static linking may affect entire codebase".to_string());
                 }
                 NewCopyleftStrength::CopyleftLimited => {
-                    notes.push("🟡 CopyleftLimited: Only modifications to this component must be open-sourced".to_string());
+                    notes.push("CopyleftLimited: Only modifications to this component must be open-sourced".to_string());
                     notes.push("Dynamic linking generally acceptable".to_string());
                 }
                 NewCopyleftStrength::Permissive | NewCopyleftStrength::PublicDomain => {
-                    notes.push("✅ Permissive/PublicDomain: Minimal compliance requirements".to_string());
+                    notes.push("Permissive/PublicDomain: Minimal compliance requirements".to_string());
                     notes.push("Required: Include license notice and attribution".to_string());
+                }
+                NewCopyleftStrength::CLA => {
+                    notes.push("CLA: Contributor License Agreement required for contributions".to_string());
+                    notes.push("Review: Ensure all contributors have signed appropriate CLA".to_string());
+                }
+                NewCopyleftStrength::Commercial => {
+                    notes.push("Commercial: Proprietary license with commercial terms".to_string());
+                    notes.push("Review: Check license terms for usage restrictions and fees".to_string());
+                    notes.push("Caution: May have redistribution limitations".to_string());
+                }
+                NewCopyleftStrength::FreeRestricted => {
+                    notes.push("Free Restricted: Permissive-style license with usage restrictions".to_string());
+                    notes.push("Review: Check specific restrictions on usage or redistribution".to_string());
+                }
+                NewCopyleftStrength::PatentLicense => {
+                    notes.push("Patent License: Covers patent rights rather than software copyright".to_string());
+                    notes.push("Review: Ensure patent license terms are compatible with software usage".to_string());
+                }
+                NewCopyleftStrength::ProprietaryFree => {
+                    notes.push("Proprietary Free: Free to use but with proprietary terms".to_string());
+                    notes.push("Review: Check specific terms and conditions for usage".to_string());
+                }
+                NewCopyleftStrength::SourceAvailable => {
+                    notes.push("Source Available: Source code provided without full open-source compliance".to_string());
+                    notes.push("Review: Check redistribution and modification rights".to_string());
                 }
                 NewCopyleftStrength::UnstatedLicense => {
                     notes.push("Unknown license: Manual legal review required".to_string());
-                }
-                _ => {
-                    notes.push("Special license type: Review specific requirements".to_string());
                 }
             }
         }
@@ -412,7 +437,7 @@ impl LicenseExpressionParser {
                 .collect();
 
             if !alternatives.is_empty() {
-                notes.push(format!("🔄 Alternative licenses available: {}", alternatives.join(", ")));
+                notes.push(format!("Alternative licenses available: {}", alternatives.join(", ")));
             }
         }
 

@@ -37,7 +37,7 @@ A copyleft strength analysis tool for license expressions based on Scancode Lice
 
 ## 2. Copyleft Definition Based on Scancode License DB
 
-This project uses the license classification standards from [Scancode License Database](https://github.com/nexB/scancode-toolkit), categorizing licenses by copyleft strength into the following levels:
+This project uses the license classification standards from [Scancode License Database](https://scancode-licensedb.aboutcode.org/), categorizing licenses by copyleft strength into the following levels:
 
 ### License Categories
 - **CLA**: Contributor License Agreement - describes contribution acceptance rules and licensing terms for ongoing development
@@ -137,4 +137,4 @@ cargo run -- "GPL-3.0 WITH Classpath-exception-2.0"
 
 ## License
 
-This project uses the MIT license, see [LICENSE](LICENSE) file for details.
+This project uses the Apache-2.0 license, see [LICENSE](LICENSE) file for details.

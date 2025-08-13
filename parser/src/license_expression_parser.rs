@@ -164,7 +164,8 @@ impl LicenseExpressionParser {
     fn evaluate_expression(&self, expr: &SpdxExpr) -> Vec<NewLicense> {
         match expr {
             SpdxExpr::License(id) => {
-                if let Some(license) = self.license_db.get(id) {
+                let lowercase_id = id.to_lowercase();
+                if let Some(license) = self.license_db.get(&lowercase_id) {
                     vec![license.clone()]
                 } else {
                     // Handle unknown licenses

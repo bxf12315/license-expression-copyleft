@@ -12,10 +12,10 @@ struct Args {
 
 fn main() {
     env_logger::init();
-    
+
     let args = Args::parse();
+
     let parser = LicenseExpressionParser::new();
-    
     let result = parser.analyze(&args.license_expression);
     println!("{}", result);
 }

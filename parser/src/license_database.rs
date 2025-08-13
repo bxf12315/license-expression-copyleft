@@ -35,14 +35,13 @@ pub struct NewLicense {
 pub fn load_licenses_from_json() -> Result<HashMap<String, NewLicense>, LicenseDatabaseError> {
     use std::fs;
     
-    // Read the JSON file from parent directory
-    let json_content = fs::read_to_string("../index.json")
+    // Read the JSON file from project root directory
+    let json_content = fs::read_to_string("index.json")
         .map_err(|e| LicenseDatabaseError::FileReadError(e.to_string()))?;
     
-    // Parse the JSON into License structs
+    // Parse the JSON into a vector of License objects
     let licenses: Vec<License> = serde_json::from_str(&json_content)
         .map_err(|e| LicenseDatabaseError::JsonParseError(e.to_string()))?;
-    
     let mut license_db = HashMap::new();
     
     for license in licenses {
@@ -58,22 +57,38 @@ pub fn load_licenses_from_json() -> Result<HashMap<String, NewLicense>, LicenseD
             "Source-available" => NewCopyleftStrength::SourceAvailable,
             "Unstated License" => NewCopyleftStrength::UnstatedLicense,
             "Patent License" => NewCopyleftStrength::PatentLicense,
+            "CLA" => NewCopyleftStrength::ProprietaryFree,
             _ => NewCopyleftStrength::UnstatedLicense,
         };
         
-
-
-        // Create NewLicense from License using NewCopyleftStrength
-        let new_license = NewLicense {
-            id: license.license_key.clone(),
-            name: license.spdx_license_key
-                .as_ref()
-                .unwrap_or(&license.license_key)
-                .to_string(),
-            copyleft_strength,
-        };
+        // Also include other SPDX license keys for better matching
+        let keys_to_insert = vec![
+            license.license_key.to_lowercase(),
+            license.spdx_license_key.as_ref().unwrap_or(&license.license_key).to_lowercase(),
+        ];
         
-        license_db.insert(license.license_key, new_license);
+        // Add any additional keys from other_spdx_license_keys
+        for key in keys_to_insert {
+            let new_license = NewLicense {
+                id: key.clone(),
+                name: license.spdx_license_key
+                    .as_ref()
+                    .unwrap_or(&license.license_key)
+                    .to_string(),
+                copyleft_strength: copyleft_strength.clone(),
+            };
+            license_db.insert(key, new_license);
+        }
+        
+        // Also add keys from other_spdx_license_keys if available
+        for other_key in &license.other_spdx_license_keys {
+            let new_license = NewLicense {
+                id: other_key.to_lowercase(),
+                name: other_key.to_string(),
+                copyleft_strength: copyleft_strength.clone(),
+            };
+            license_db.insert(other_key.to_lowercase(), new_license);
+        }
     }
     
     Ok(license_db)

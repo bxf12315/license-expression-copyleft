@@ -2,7 +2,27 @@
 
 A copyleft strength analysis tool for license expressions based on Scancode License DB.
 
-## 1. Running Requirements and Environment Setup
+## What This Tool Does
+This application analyzes software license expressions to determine their **copyleft strength** - a critical factor in open source license compliance. It parses complex license expressions like "MIT OR GPL-2.0" and provides clear guidance on:
+
+- **Risk Assessment**: Immediate understanding of how restrictive a license combination is
+- **Compliance Requirements**: What obligations you must fulfill when using specific licenses
+- **Decision Support**: Which license option to choose in OR expressions for optimal flexibility
+- **Legal Clarity**: Plain-English explanations of complex licensing terms
+
+## Real-World Scenarios
+
+**Scenario 1**: You're building a commercial application and want to use a library licensed "LGPL-2.1 OR GPL-3.0". This tool tells you:
+- Risk Level: Medium (limited copyleft)
+- Recommendation: Choose LGPL-2.1 for better commercial flexibility
+- Compliance: Must provide source code modifications but can link with proprietary code
+
+**Scenario 2**: You're evaluating "MIT AND GPL-2.0" for your project. The analysis shows:
+- Risk Level: High (strong copyleft applies)
+- Impact: Your entire project must be GPL-2.0 compatible
+- Alternative: Consider MIT-only dependencies to maintain flexibility
+
+## Running Requirements and Environment Setup
 
 ### System Requirements
 - **Rust**: Requires Rust 1.70 or higher
@@ -35,7 +55,7 @@ A copyleft strength analysis tool for license expressions based on Scancode Lice
    cargo run -- "MIT OR Apache-2.0"
    ```
 
-## 2. Copyleft Definition Based on Scancode License DB
+## Copyleft Definition Based on Scancode License DB
 
 This project uses the license classification standards from [Scancode License Database](https://scancode-licensedb.aboutcode.org/), categorizing licenses by copyleft strength into the following levels:
 
@@ -57,7 +77,7 @@ This project uses the license classification standards from [Scancode License Da
 - Contains complete definitions for 800+ open source licenses
 - Based on authoritative classification standards from Scancode Toolkit
 
-## 3. Analyze Result Explanation
+## Analyze Result Explanation
 
 ### Output Fields Explanation
 After running the analysis command, the output contains the following information:
@@ -83,7 +103,7 @@ After running the analysis command, the output contains the following informatio
 - **High**: Strong copyleft requirements
 - **Critical**: Commercial restrictions or unknown licenses
 
-## 4. Copyleft Determination Logic for AND/OR/WITH Operations
+## Copyleft Determination Logic for AND/OR/WITH Operations
 
 ### Operator Explanation
 
